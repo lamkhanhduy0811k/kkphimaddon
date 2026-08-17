@@ -15,7 +15,7 @@ app.use((req, res, next) => {
 
 const MANIFEST = {
   id: 'org.multisource.addon',
-  version: '2.0.3',
+  version: '2.1.0',
   name: 'Tổng Hợp Phim Vietsub',
   description: 'Addon tổng hợp kho phim từ KKPhim, Ổ Phim và NguồnC cho Stremio/Nuvio',
   resources: ['catalog', 'meta', 'stream'],
@@ -92,18 +92,18 @@ app.get(['/catalog/:type/:id.json', '/catalog/:type/:id/:extra.json'], async (re
     } else if (id.startsWith('nc_')) {
       const isMovie = id === 'nc_phimle';
       const cat = isMovie ? 'phim-le' : 'phim-bo';
-      
-      const urls = [
-        `https://phim.nguonc.com/api/films/danh-sach/${cat}`,
-        `https://phim.nguonc.com/api/films/phim-moi-cap-nhat`
+      const testUrls = [
+        `https://phim.nguonc.com/api/films/danh-sach/${cat}?page=1`,
+        `https://api.nguonc.com/api/films/danh-sach/${cat}?page=1`,
+        `https://phim.nguonc.com/api/films/phim-moi-cap-nhat?page=1`
       ];
 
       let items = [];
-      for (const u of urls) {
+      for (const u of testUrls) {
         try {
-          const { data } = await axios.get(u, AXIOS_OPT);
-          if (data?.items && data.items.length > 0) {
-            items = data.items;
+          const resAxios = await axios.get(u, { ...AXIOS_OPT, validateStatus: () => true });
+          if (resAxios.data?.items?.length > 0) {
+            items = resAxios.data.items;
             break;
           }
         } catch (e) {}
@@ -166,9 +166,21 @@ app.get(['/meta/:type/:id.json', '/meta/:type/:id/:extra.json'], async (req, res
       });
 
     } else if (prefix === 'nc') {
-      const url = `https://phim.nguonc.com/api/film/${slug}`;
-      const { data } = await axios.get(url, AXIOS_OPT);
-      const movie = data?.movie;
+      const testUrls = [
+        `https://phim.nguonc.com/api/film/${slug}`,
+        `https://api.nguonc.com/api/film/${slug}`
+      ];
+      let movie = null;
+      for (const u of testUrls) {
+        try {
+          const resAxios = await axios.get(u, { ...AXIOS_OPT, validateStatus: () => true });
+          if (resAxios.data?.movie) {
+            movie = resAxios.data.movie;
+            break;
+          }
+        } catch (e) {}
+      }
+
       if (!movie) return res.json({ meta: null });
 
       const epData = movie.episodes?.[0]?.items || [];
@@ -222,10 +234,22 @@ app.get(['/stream/:type/:id.json', '/stream/:type/:id/:extra.json'], async (req,
       });
 
     } else if (prefix === 'nc') {
-      const url = `https://phim.nguonc.com/api/film/${slug}`;
-      const { data } = await axios.get(url, AXIOS_OPT);
-      const servers = data?.movie?.episodes || [];
+      const testUrls = [
+        `https://phim.nguonc.com/api/film/${slug}`,
+        `https://api.nguonc.com/api/film/${slug}`
+      ];
+      let movie = null;
+      for (const u of testUrls) {
+        try {
+          const resAxios = await axios.get(u, { ...AXIOS_OPT, validateStatus: () => true });
+          if (resAxios.data?.movie) {
+            movie = resAxios.data.movie;
+            break;
+          }
+        } catch (e) {}
+      }
 
+      const servers = movie?.episodes || [];
       servers.forEach(srv => {
         const ep = srv.items?.find(e => e.slug === epSlug) || srv.items?.[0];
         if (ep && (ep.m3u8 || ep.embed)) {
@@ -246,4 +270,4 @@ app.get(['/stream/:type/:id.json', '/stream/:type/:id/:extra.json'], async (req,
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`Multi-source Addon running on port ${PORT}`));
-  
+    
