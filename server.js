@@ -15,7 +15,7 @@ app.use((req, res, next) => {
 
 const MANIFEST = {
   id: 'org.kkphim.addon',
-  version: '1.0.0',
+  version: '1.0.1',
   name: 'KKPhim Addon',
   description: 'Kho phim tổng hợp từ KKPhim chất lượng cao cho Stremio/Nuvio.',
   resources: ['catalog', 'meta', 'stream'],
@@ -41,29 +41,30 @@ app.get('/manifest.json', (req, res) => res.json(MANIFEST));
 
 app.get('/catalog/:type/:id.json', async (req, res) => {
   const { id } = req.params;
-  let apiUrl = 'https://kkphim.com/v1/api/danh-sach/phim-le';
+  // Sửa đúng chuẩn đường dẫn API của KKPhim (/api/v1/...)
+  let apiUrl = 'https://kkphim.com/api/v1/danh-sach/phim-le';
   
   if (id === 'kk_phimbo') {
-    apiUrl = 'https://kkphim.com/v1/api/danh-sach/phim-bo';
+    apiUrl = 'https://kkphim.com/api/v1/danh-sach/phim-bo';
   }
 
   try {
-    const { data } = await axios.get(apiUrl, { timeout: 4000 });
+    const { data } = await axios.get(apiUrl, { timeout: 8000 });
     const items = data?.data?.items || data?.items || [];
     
     const metas = items.map(item => ({
       id: `kk:${item.slug}`,
       type: id === 'kk_phimle' ? 'movie' : 'series',
-      name: item.name,
+      name: item.name || 'Đang cập nhật',
       poster: item.poster_url?.startsWith('http') ? item.poster_url : `https://img.kkphim.com/${item.poster_url}`,
       background: item.thumb_url?.startsWith('http') ? item.thumb_url : `https://img.kkphim.com/${item.thumb_url}`,
       description: item.origin_name || '',
       releaseInfo: String(item.year || '2026')
     }));
 
-    res.json({ metas });
+    return res.json({ metas });
   } catch (e) {
-    res.json({ metas: [] });
+    return res.json({ metas: [] });
   }
 });
 
@@ -73,7 +74,7 @@ app.get('/meta/:type/:id.json', async (req, res) => {
 
   const slug = id.replace('kk:', '');
   try {
-    const { data } = await axios.get(`https://kkphim.com/phim/${slug}`, { timeout: 4000 });
+    const { data } = await axios.get(`https://kkphim.com/phim/${slug}`, { timeout: 8000 });
     const movie = data?.movie;
     const epData = data?.episodes?.[0]?.server_data || [];
 
@@ -86,19 +87,19 @@ app.get('/meta/:type/:id.json', async (req, res) => {
       episode: idx + 1
     }));
 
-    res.json({
+    return res.json({
       meta: {
         id: `kk:${slug}`,
         type,
-        name: movie.name,
+        name: movie.name || 'Phim',
         poster: movie.poster_url,
-        description: movie.content,
+        description: movie.content || '',
         genres: movie.category?.map(c => c.name) || [],
         videos
       }
     });
   } catch (e) {
-    res.json({ meta: null });
+    return res.json({ meta: null });
   }
 });
 
@@ -108,7 +109,7 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
   const [, slug, epSlug] = id.split(':');
   try {
-    const { data } = await axios.get(`https://kkphim.com/phim/${slug}`, { timeout: 4000 });
+    const { data } = await axios.get(`https://kkphim.com/phim/${slug}`, { timeout: 8000 });
     const servers = data?.episodes || [];
     let streams = [];
 
@@ -116,18 +117,19 @@ app.get('/stream/:type/:id.json', async (req, res) => {
       const ep = srv.server_data?.find(e => e.slug === epSlug) || srv.server_data?.[0];
       if (ep && ep.link_m3u8) {
         streams.push({
-          name: `KKPhim [${srv.server_name}]`,
+          name: `KKPhim [${srv.server_name || 'VIP'}]`,
           title: ep.name || 'FHD',
           url: ep.link_m3u8
         });
       }
     });
 
-    res.json({ streams });
+    return res.json({ streams });
   } catch (e) {
-    res.json({ streams: [] });
+    return res.json({ streams: [] });
   }
 });
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`KKPhim Addon running on port ${PORT}`));
+      
