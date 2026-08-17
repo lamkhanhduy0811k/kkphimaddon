@@ -41,10 +41,11 @@ app.get('/manifest.json', (req, res) => res.json(MANIFEST));
 
 app.get('/catalog/:type/:id.json', async (req, res) => {
   const { id } = req.params;
-  let apiUrl = 'https://phimapi.com/danh-sach/phim-moi-cap-nhat'; // Hoặc link API của KKPhim tương ứng
+  let apiUrl = 'https://kkphim.com/v1/api/danh-sach/phim-le';
   
-  if (id === 'kk_phimle') apiUrl = 'https://kkphim.com/v1/api/danh-sach/phim-le';
-  if (id === 'kk_phimbo') apiUrl = 'https://kkphim.com/v1/api/danh-sach/phim-bo';
+  if (id === 'kk_phimbo') {
+    apiUrl = 'https://kkphim.com/v1/api/danh-sach/phim-bo';
+  }
 
   try {
     const { data } = await axios.get(apiUrl, { timeout: 4000 });
@@ -130,4 +131,3 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`KKPhim Addon running on port ${PORT}`));
-      
