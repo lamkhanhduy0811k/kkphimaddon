@@ -15,9 +15,9 @@ app.use((req, res, next) => {
 
 const MANIFEST = {
   id: 'org.kkphim.addon',
-  version: '1.0.1',
+  version: '1.0.2',
   name: 'KKPhim Addon',
-  description: 'Kho phim tổng hợp từ KKPhim chất lượng cao cho Stremio/Nuvio.',
+  description: 'Kho phim tổng hợp từ KKPhim cho Stremio/Nuvio',
   resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
@@ -39,9 +39,9 @@ const MANIFEST = {
 
 app.get('/manifest.json', (req, res) => res.json(MANIFEST));
 
-app.get('/catalog/:type/:id.json', async (req, res) => {
+// Hứng cả đường dẫn chuẩn lẫn đường dẫn chứa tham số phụ (/:extra.json)
+app.get(['/catalog/:type/:id.json', '/catalog/:type/:id/:extra.json'], async (req, res) => {
   const { id } = req.params;
-  // Sửa đúng chuẩn đường dẫn API của KKPhim (/api/v1/...)
   let apiUrl = 'https://kkphim.com/api/v1/danh-sach/phim-le';
   
   if (id === 'kk_phimbo') {
@@ -51,16 +51,28 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
   try {
     const { data } = await axios.get(apiUrl, { timeout: 8000 });
     const items = data?.data?.items || data?.items || [];
-    
-    const metas = items.map(item => ({
-      id: `kk:${item.slug}`,
-      type: id === 'kk_phimle' ? 'movie' : 'series',
-      name: item.name || 'Đang cập nhật',
-      poster: item.poster_url?.startsWith('http') ? item.poster_url : `https://img.kkphim.com/${item.poster_url}`,
-      background: item.thumb_url?.startsWith('http') ? item.thumb_url : `https://img.kkphim.com/${item.thumb_url}`,
-      description: item.origin_name || '',
-      releaseInfo: String(item.year || '2026')
-    }));
+    const cdnDomain = data?.data?.APP_DOMAIN_CDN_IMAGE || 'https://phimimg.com';
+
+    const metas = items.map(item => {
+      let poster = item.poster_url || item.thumb_url || '';
+      if (poster && !poster.startsWith('http')) {
+        poster = `${cdnDomain}/${poster}`;
+      }
+      let background = item.thumb_url || item.poster_url || '';
+      if (background && !background.startsWith('http')) {
+        background = `${cdnDomain}/${background}`;
+      }
+
+      return {
+        id: `kk:${item.slug}`,
+        type: id === 'kk_phimle' ? 'movie' : 'series',
+        name: item.name || 'Phim',
+        poster: poster,
+        background: background,
+        description: item.origin_name || '',
+        releaseInfo: String(item.year || '2026')
+      };
+    });
 
     return res.json({ metas });
   } catch (e) {
@@ -68,7 +80,7 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
   }
 });
 
-app.get('/meta/:type/:id.json', async (req, res) => {
+app.get(['/meta/:type/:id.json', '/meta/:type/:id/:extra.json'], async (req, res) => {
   const { id, type } = req.params;
   if (!id.startsWith('kk:')) return res.json({ meta: null });
 
@@ -79,6 +91,10 @@ app.get('/meta/:type/:id.json', async (req, res) => {
     const epData = data?.episodes?.[0]?.server_data || [];
 
     if (!movie) return res.json({ meta: null });
+
+    const cdnDomain = 'https://phimimg.com';
+    let poster = movie.poster_url || '';
+    if (poster && !poster.startsWith('http')) poster = `${cdnDomain}/${poster}`;
 
     const videos = epData.map((ep, idx) => ({
       id: `kk:${slug}:${ep.slug}`,
@@ -92,7 +108,7 @@ app.get('/meta/:type/:id.json', async (req, res) => {
         id: `kk:${slug}`,
         type,
         name: movie.name || 'Phim',
-        poster: movie.poster_url,
+        poster: poster,
         description: movie.content || '',
         genres: movie.category?.map(c => c.name) || [],
         videos
@@ -103,11 +119,14 @@ app.get('/meta/:type/:id.json', async (req, res) => {
   }
 });
 
-app.get('/stream/:type/:id.json', async (req, res) => {
+app.get(['/stream/:type/:id.json', '/stream/:type/:id/:extra.json'], async (req, res) => {
   const { id } = req.params;
   if (!id.startsWith('kk:')) return res.json({ streams: [] });
 
-  const [, slug, epSlug] = id.split(':');
+  const parts = id.split(':');
+  const slug = parts[1];
+  const epSlug = parts[2];
+
   try {
     const { data } = await axios.get(`https://kkphim.com/phim/${slug}`, { timeout: 8000 });
     const servers = data?.episodes || [];
@@ -132,4 +151,4 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`KKPhim Addon running on port ${PORT}`));
-      
+        
