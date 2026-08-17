@@ -15,7 +15,7 @@ app.use((req, res, next) => {
 
 const MANIFEST = {
   id: 'org.multisource.addon',
-  version: '2.0.0',
+  version: '2.0.1',
   name: 'Tổng Hợp Phim Vietsub',
   description: 'Addon tổng hợp kho phim từ KKPhim, Ổ Phim và NguồnC cho Stremio/Nuvio',
   resources: ['catalog', 'meta', 'stream'],
@@ -40,6 +40,15 @@ const AXIOS_OPT = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
   }
 };
+
+// Hàm ghép đường dẫn ảnh chuẩn cho Ổ Phim
+function getOphimImage(path) {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  const clean = path.replace(/^\/+/, '');
+  if (clean.startsWith('uploads/')) return `https://img.ophim.live/${clean}`;
+  return `https://img.ophim.live/uploads/movies/${clean}`;
+}
 
 app.get(['/catalog/:type/:id.json', '/catalog/:type/:id/:extra.json'], async (req, res) => {
   const { id } = req.params;
@@ -70,14 +79,13 @@ app.get(['/catalog/:type/:id.json', '/catalog/:type/:id/:extra.json'], async (re
       const url = `https://ophim1.com/v1/api/danh-sach/${cat}?page=1`;
       const { data } = await axios.get(url, AXIOS_OPT);
       const items = data?.data?.items || data?.items || [];
-      const cdn = data?.data?.APP_DOMAIN_CDN_IMAGE || 'https://img.ophim.live';
 
       metas = items.map(item => ({
         id: `op:${item.slug}`,
         type: isMovie ? 'movie' : 'series',
         name: item.name || 'Phim Ổ Phim',
-        poster: item.poster_url?.startsWith('http') ? item.poster_url : `${cdn}/${item.poster_url}`,
-        background: item.thumb_url?.startsWith('http') ? item.thumb_url : `${cdn}/${item.thumb_url}`,
+        poster: getOphimImage(item.poster_url || item.thumb_url),
+        background: getOphimImage(item.thumb_url || item.poster_url),
         description: item.origin_name || '',
         releaseInfo: String(item.year || '2026')
       }));
@@ -129,12 +137,16 @@ app.get(['/meta/:type/:id.json', '/meta/:type/:id/:extra.json'], async (req, res
         episode: idx + 1
       }));
 
+      const poster = prefix === 'op' 
+        ? getOphimImage(movie.poster_url || movie.thumb_url)
+        : (movie.poster_url?.startsWith('http') ? movie.poster_url : `https://phimimg.com/${movie.poster_url}`);
+
       return res.json({
         meta: {
           id: `${prefix}:${slug}`,
           type,
           name: movie.name || 'Phim',
-          poster: movie.poster_url?.startsWith('http') ? movie.poster_url : `https://phimimg.com/${movie.poster_url}`,
+          poster: poster,
           description: movie.content || '',
           genres: movie.category?.map(c => c.name) || [],
           videos
@@ -220,4 +232,4 @@ app.get(['/stream/:type/:id.json', '/stream/:type/:id/:extra.json'], async (req,
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`Multi-source Addon running on port ${PORT}`));
-    
+        
