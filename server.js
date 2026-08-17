@@ -13,20 +13,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Giả lập User-Agent trình duyệt để tránh bị KKPhim chặn kết nối
-const AXIOS_CONFIG = {
-  timeout: 8000,
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*'
-  }
-};
-
 const MANIFEST = {
   id: 'org.kkphim.addon',
-  version: '1.0.3',
+  version: '1.0.5',
   name: 'KKPhim Addon',
-  description: 'Kho phim tổng hợp từ KKPhim cho Stremio/Nuvio',
+  description: 'Kho phim thuần KKPhim cho Stremio/Nuvio',
   resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
@@ -46,36 +37,37 @@ const MANIFEST = {
   idPrefixes: ['kk:']
 };
 
-app.get('/', (req, res) => res.send('KKPhim Addon Server Running'));
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Referer': 'https://kkphim.com/'
+};
+
+app.get('/', (req, res) => res.send('KKPhim Server Active'));
 app.get('/manifest.json', (req, res) => res.json(MANIFEST));
 
 app.get(['/catalog/:type/:id.json', '/catalog/:type/:id/:extra.json'], async (req, res) => {
   const { id } = req.params;
-  let apiUrl = 'https://kkphim.com/api/v1/danh-sach/phim-le';
-  
-  if (id === 'kk_phimbo') {
-    apiUrl = 'https://kkphim.com/api/v1/danh-sach/phim-bo';
-  }
+  const isMovie = id === 'kk_phimle';
+  const category = isMovie ? 'phim-le' : 'phim-bo';
+  const url = `https://kkphim.com/api/v1/danh-sach/${category}`;
 
   try {
-    const { data } = await axios.get(apiUrl, AXIOS_CONFIG);
-    const items = data?.data?.items || data?.items || [];
+    const { data } = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    const items = data?.data?.items || [];
     const cdnDomain = data?.data?.APP_DOMAIN_CDN_IMAGE || 'https://phimimg.com';
 
     const metas = items.map(item => {
       let poster = item.poster_url || item.thumb_url || '';
-      if (poster && !poster.startsWith('http')) {
-        poster = `${cdnDomain}/${poster}`;
-      }
+      if (poster && !poster.startsWith('http')) poster = `${cdnDomain}/${poster}`;
+
       let background = item.thumb_url || item.poster_url || '';
-      if (background && !background.startsWith('http')) {
-        background = `${cdnDomain}/${background}`;
-      }
+      if (background && !background.startsWith('http')) background = `${cdnDomain}/${background}`;
 
       return {
         id: `kk:${item.slug}`,
-        type: id === 'kk_phimle' ? 'movie' : 'series',
-        name: item.name || 'Phim',
+        type: isMovie ? 'movie' : 'series',
+        name: item.name || 'Phim KKPhim',
         poster: poster,
         background: background,
         description: item.origin_name || '',
@@ -94,13 +86,14 @@ app.get(['/meta/:type/:id.json', '/meta/:type/:id/:extra.json'], async (req, res
   if (!id.startsWith('kk:')) return res.json({ meta: null });
 
   const slug = id.replace('kk:', '');
-  try {
-    const { data } = await axios.get(`https://kkphim.com/api/v1/phim/${slug}`, AXIOS_CONFIG);
-    const movie = data?.data?.item || data?.movie;
-    const epData = data?.data?.item?.episodes?.[0]?.server_data || data?.episodes?.[0]?.server_data || [];
+  const url = `https://kkphim.com/api/v1/phim/${slug}`;
 
+  try {
+    const { data } = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    const movie = data?.data?.item;
     if (!movie) return res.json({ meta: null });
 
+    const epData = movie.episodes?.[0]?.server_data || [];
     const cdnDomain = 'https://phimimg.com';
     let poster = movie.poster_url || '';
     if (poster && !poster.startsWith('http')) poster = `${cdnDomain}/${poster}`;
@@ -136,9 +129,11 @@ app.get(['/stream/:type/:id.json', '/stream/:type/:id/:extra.json'], async (req,
   const slug = parts[1];
   const epSlug = parts[2];
 
+  const url = `https://kkphim.com/api/v1/phim/${slug}`;
+
   try {
-    const { data } = await axios.get(`https://kkphim.com/api/v1/phim/${slug}`, AXIOS_CONFIG);
-    const servers = data?.data?.item?.episodes || data?.episodes || [];
+    const { data } = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    const servers = data?.data?.item?.episodes || [];
     let streams = [];
 
     servers.forEach(srv => {
