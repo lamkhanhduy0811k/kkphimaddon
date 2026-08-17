@@ -15,7 +15,7 @@ app.use((req, res, next) => {
 
 const MANIFEST = {
   id: 'org.multisource.addon',
-  version: '2.0.1',
+  version: '2.0.2',
   name: 'Tổng Hợp Phim Vietsub',
   description: 'Addon tổng hợp kho phim từ KKPhim, Ổ Phim và NguồnC cho Stremio/Nuvio',
   resources: ['catalog', 'meta', 'stream'],
@@ -41,7 +41,6 @@ const AXIOS_OPT = {
   }
 };
 
-// Hàm ghép đường dẫn ảnh chuẩn cho Ổ Phim
 function getOphimImage(path) {
   if (!path) return '';
   if (path.startsWith('http')) return path;
@@ -93,15 +92,27 @@ app.get(['/catalog/:type/:id.json', '/catalog/:type/:id/:extra.json'], async (re
     } else if (id.startsWith('nc_')) {
       const isMovie = id === 'nc_phimle';
       const cat = isMovie ? 'phim-le' : 'phim-bo';
-      const url = `https://api.nguonc.com/api/films/danh-sach/${cat}?page=1`;
-      const { data } = await axios.get(url, AXIOS_OPT);
-      const items = data?.items || [];
+      const urls = [
+        `https://phim.nguonc.com/api/films/danh-sach/${cat}?page=1`,
+        `https://api.nguonc.com/api/films/danh-sach/${cat}?page=1`
+      ];
+
+      let items = [];
+      for (const u of urls) {
+        try {
+          const { data } = await axios.get(u, AXIOS_OPT);
+          if (data?.items && data.items.length > 0) {
+            items = data.items;
+            break;
+          }
+        } catch (e) {}
+      }
 
       metas = items.map(item => ({
         id: `nc:${item.slug}`,
         type: isMovie ? 'movie' : 'series',
         name: item.name || 'Phim Nguồn C',
-        poster: item.poster_url || '',
+        poster: item.poster_url || item.thumb_url || '',
         background: item.thumb_url || item.poster_url || '',
         description: item.origin_name || '',
         releaseInfo: String(item.year || '2026')
@@ -152,10 +163,23 @@ app.get(['/meta/:type/:id.json', '/meta/:type/:id/:extra.json'], async (req, res
           videos
         }
       });
+
     } else if (prefix === 'nc') {
-      const url = `https://api.nguonc.com/api/film/${slug}`;
-      const { data } = await axios.get(url, AXIOS_OPT);
-      const movie = data?.movie;
+      const urls = [
+        `https://phim.nguonc.com/api/film/${slug}`,
+        `https://api.nguonc.com/api/film/${slug}`
+      ];
+      let movie = null;
+      for (const u of urls) {
+        try {
+          const { data } = await axios.get(u, AXIOS_OPT);
+          if (data?.movie) {
+            movie = data.movie;
+            break;
+          }
+        } catch (e) {}
+      }
+
       if (!movie) return res.json({ meta: null });
 
       const epData = movie.episodes?.[0]?.items || [];
@@ -171,7 +195,7 @@ app.get(['/meta/:type/:id.json', '/meta/:type/:id/:extra.json'], async (req, res
           id: `nc:${slug}`,
           type,
           name: movie.name || 'Phim',
-          poster: movie.poster_url || '',
+          poster: movie.poster_url || movie.thumb_url || '',
           description: movie.description || '',
           videos
         }
@@ -207,18 +231,31 @@ app.get(['/stream/:type/:id.json', '/stream/:type/:id/:extra.json'], async (req,
           });
         }
       });
-    } else if (prefix === 'nc') {
-      const url = `https://api.nguonc.com/api/film/${slug}`;
-      const { data } = await axios.get(url, AXIOS_OPT);
-      const servers = data?.movie?.episodes || [];
 
+    } else if (prefix === 'nc') {
+      const urls = [
+        `https://phim.nguonc.com/api/film/${slug}`,
+        `https://api.nguonc.com/api/film/${slug}`
+      ];
+      let movie = null;
+      for (const u of urls) {
+        try {
+          const { data } = await axios.get(u, AXIOS_OPT);
+          if (data?.movie) {
+            movie = data.movie;
+            break;
+          }
+        } catch (e) {}
+      }
+
+      const servers = movie?.episodes || [];
       servers.forEach(srv => {
         const ep = srv.items?.find(e => e.slug === epSlug) || srv.items?.[0];
-        if (ep && ep.m3u8) {
+        if (ep && (ep.m3u8 || ep.embed)) {
           streams.push({
             name: `[Nguồn C] ${srv.server_name || 'VIP'}`,
             title: ep.name || 'FHD',
-            url: ep.m3u8
+            url: ep.m3u8 || ep.embed
           });
         }
       });
